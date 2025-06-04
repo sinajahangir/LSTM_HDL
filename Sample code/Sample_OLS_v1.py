@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 @author: SinaJahangir
-# This script processes test data for multiple catchments, evaluates a trained HDL (HLS) model,  
+# This script processes test data for multiple catchments, evaluates a trained HDL (OLS) model,  
 and saves the results as CSV files for each catchments.  
 """
 import numpy as np
@@ -214,44 +214,39 @@ random.seed(seed)  # For Python's random module
 torch.backends.cudnn.deterministic = True  # Ensures deterministic behavior
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #%%
-# HLS class has been devloped for weekly reconciliation. You can change this based
+# OLS class has been devloped for weekly reconciliation. You can change this based
 # on your own hierarchy structure
-class HLS(nn.Module):
-    def __init__(self):
+class OLS(nn.Module):
+    def __init__(self, device='cuda'):
         """Initializes the instance attributes"""
-        super(HLS, self).__init__()
+        super(OLS, self).__init__()
+        self.device = device
         
-        # Initialize S and sigma matrices
-        s_temp = torch.diag(torch.ones(7).to(device))
-        s_temp = torch.cat((torch.ones(1, 7).to(device), s_temp), dim=0)
-        self.S = torch.tensor(s_temp, dtype=torch.float32)
+        # Define the S matrix
+        s_temp = torch.diag(torch.ones(7, device=device))
+        s_temp = torch.cat((torch.ones(1, 7, device=device), s_temp), dim=0)
+        
+        # Store S as a parameter (not trainable)
+        self.register_buffer("S", s_temp.clone().detach())
 
-        sigma_temp = torch.diag(torch.ones(8).to(device))
-        sigma_temp[0] = sigma_temp[0] * 7
-        self.sigma = torch.tensor(sigma_temp, dtype=torch.float32)
-        
-        # Precompute the inverse of sigma
-        self.sigma_inverse = torch.linalg.inv(self.sigma)
-        
-        # Precompute (Sᵀ * sigma⁻¹ * S)⁻¹
+        # Precompute (Sᵀ * S)⁻¹
         S_t = self.S.T
-        self.S_t_S_inv = torch.linalg.inv(S_t @ self.sigma_inverse @ self.S)
+        self.S_t_S_inv = torch.linalg.inv(S_t @ self.S)
 
     def forward(self, inputs):
         """
         Defines the computation from inputs to outputs
-        :param inputs: torch.Tensor
-        :return: torch.Tensor
+        :param inputs: torch.Tensor of shape [batch_size, 8]
+        :return: reconciled output of shape [batch_size, 8]
         """
-        # Compute beta = (Sᵀ * sigma⁻¹ * S)⁻¹ * Sᵀ * sigma⁻¹ * inputs.T
-        beta = self.S_t_S_inv @ self.S.T @ self.sigma_inverse @ inputs.T
-        
+        # Compute beta = (Sᵀ * S)⁻¹ * Sᵀ * inputs.T
+        beta = self.S_t_S_inv @ self.S.T @ inputs.T  # [8, batch_size]
+
         # Reconcile the outputs: reconcile = S * beta
-        reconcile = self.S @ beta
-        
-        # Transpose the reconciled output
-        reconcile = reconcile.T
-        return reconcile
+        reconcile = self.S @ beta  # [8, batch_size]
+
+        # Transpose the reconciled output to match input shape
+        return reconcile.T  # [batch_size, 8]
 #%%
 class LSTMModelW(nn.Module):
     """
@@ -358,15 +353,15 @@ class LSTMModelD(nn.Module):
         return output_7d
     
     
-class LSTMHLS(nn.Module):
+class LSTMOLS(nn.Module):
     def __init__(self, pretrained_model_1d, pretrained_model_7d):
         """
         Args:
             pretrained_model_1d (LSTMModel): Pretrained LSTM model for 1D output.
             pretrained_model_7d (LSTMModel): Pretrained LSTM model for 7D output.
-            hidden_dim (int): Hidden size of the final HLS layer.
+            hidden_dim (int): Hidden size of the final OLS layer.
         """
-        super(LSTMHLS, self).__init__()
+        super(LSTMOLS, self).__init__()
 
         # Load the two pretrained LSTM models
         self.lstm_1d = pretrained_model_1d
@@ -378,8 +373,8 @@ class LSTMHLS(nn.Module):
         for param in self.lstm_7d.parameters():
             param.requires_grad = False
         
-        # HLS Layer (Processes concatenated outputs)
-        self.hls_layer = HLS()  # Combines both outputs
+        # OLS Layer (Processes concatenated outputs)
+        self.ols_layer = OLS()  # Combines both outputs
 
 
     def forward(self, input1, input2):
@@ -399,11 +394,11 @@ class LSTMHLS(nn.Module):
         # Concatenate both outputs
         combined_out = torch.cat((output_1d, output_7d), dim=1)  # [batch_size, 8]
 
-        # Pass through HLS Layer
-        hls_out = self.hls_layer(combined_out)  # [batch_size, hidden_dim]
+        # Pass through OLS Layer
+        ols_out = self.ols_layer(combined_out)  # [batch_size, hidden_dim]
 
         
-        return hls_out
+        return ols_out
 #%%
 
 
@@ -446,10 +441,10 @@ modeliw = load_model(LSTMModelW, model_w_path, **MODEL_PARAMS)
 modelid = load_model(LSTMModelD, model_d_path, **MODEL_PARAMS)
 
 # Combine models
-modeli_hls = LSTMHLS(modeliw, modelid).to(device)
+modeli_ols = LSTMOLS(modeliw, modelid).to(device)
 
 # Define output directory
-output_folder = Path(f"Multiscale_Regional_HLS_{seed}")
+output_folder = Path(f"Multiscale_Regional_OLS_{seed}")
 output_folder.mkdir(parents=True, exist_ok=True)  # Create if it doesn't exist
 
 print(f"Models loaded successfully on {device}. Output directory: {output_folder}")
@@ -548,7 +543,7 @@ for basin_id in range(421):
     X_test, X_test_era, Y_test = preprocess_test_data(df_test_norm, df_test_era_norm, basin_id, columns, columns_era)
 
     # Get model predictions
-    y_pred = evaluate_model(modeli_hls, X_test, X_test_era)
+    y_pred = evaluate_model(modeli_ols, X_test, X_test_era)
 
     # Process predictions
     y_pred_sum = y_pred[:, 0].reshape((-1, 1))
