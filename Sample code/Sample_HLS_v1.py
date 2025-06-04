@@ -204,6 +204,8 @@ columns_era=df_train_era_norm.columns.to_list()
 columns_era.remove('basin_id')
 
 import random
+# Assign random seed for reproducibility. 213 is aligned with the sample pre-trained
+# weights uploaded
 seed=213
 torch.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)  # For CUDA
@@ -212,6 +214,8 @@ random.seed(seed)  # For Python's random module
 torch.backends.cudnn.deterministic = True  # Ensures deterministic behavior
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #%%
+# HLS class has been devloped for weekly reconciliation. You can change this based
+# on your own hierarchy structure
 class HLS(nn.Module):
     def __init__(self):
         """Initializes the instance attributes"""
@@ -297,9 +301,8 @@ class LSTMModelW(nn.Module):
         
         # Apply dropout
         combined_features = self.dropout(combined_features)
-        # Pass through separate linear layers for 1D and 7D outputs
+        # Pass through linear layer
         output_1d = self.fc_1d(combined_features)  # [batch_size, 1]
-        #output_7d = self.fc_7d(combined_features)  # [batch_size, 7]
         return output_1d
     
 class LSTMModelD(nn.Module):
@@ -350,8 +353,7 @@ class LSTMModelD(nn.Module):
         
         # Apply dropout
         combined_features = self.dropout(combined_features)
-        # Pass through separate linear layers for 1D and 7D outputs
-        #output_1d = self.fc_1d(combined_features)  # [batch_size, 1]
+        # Pass through linear layer
         output_7d = self.fc_7d(combined_features)  # [batch_size, 7]
         return output_7d
     
