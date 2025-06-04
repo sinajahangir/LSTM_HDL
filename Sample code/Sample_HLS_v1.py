@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import torch
+import torch.nn as nn
 
 # Set working directory (consider avoiding global directory changes)
 BASE_DIR = Path(r"F:\msjahang\HDL")
@@ -209,7 +210,6 @@ torch.cuda.manual_seed_all(seed)  # For CUDA
 np.random.seed(seed)  # For NumPy
 random.seed(seed)  # For Python's random module
 torch.backends.cudnn.deterministic = True  # Ensures deterministic behavior
-import torch.nn as nn
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #%%
 class HLS(nn.Module):
@@ -252,7 +252,7 @@ class HLS(nn.Module):
 class LSTMModelW(nn.Module):
     """
     LSTM model with two inputs processed by separate LSTM layers, 
-    with two outputs (1D and 7D) from the encoded spaces.
+    with one output (1w) from the encoded spaces.
     """
     def __init__(self, input_dim1, input_dim2, hidden_dim, num_layers=1,dropout_prob = 0.4):
         """
@@ -305,7 +305,7 @@ class LSTMModelW(nn.Module):
 class LSTMModelD(nn.Module):
     """
     LSTM model with two inputs processed by separate LSTM layers, 
-    with two outputs (1D and 7D) from the encoded spaces.
+    with multiple outputs (7Ds) from the encoded spaces.
     """
     def __init__(self, input_dim1, input_dim2, hidden_dim, num_layers=1,dropout_prob = 0.4):
         """
@@ -407,8 +407,8 @@ class LSTMHLS(nn.Module):
 
 # Model parameters
 MODEL_PARAMS = {
-    "input_size": 33,  # Dynamic + static + q
-    "input_size_era": 64,
+    "input_size": 33,  # Dynamic + static + q (past)
+    "input_size_era": 64, # All ERA5-Land data
     "hidden_size": 128,
     "num_layers": 1,
     "dropout_prob": 0.4,
@@ -433,9 +433,6 @@ def load_model(model_class, model_path: Path, **model_params):
     model.load_state_dict(torch.load(model_path, weights_only=True))
     return model
 
-
-# Define the seed
-seed = 42  # Set seed explicitly for clarity
 
 # Load models
 #Weekly model
