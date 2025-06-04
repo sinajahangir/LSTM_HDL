@@ -9,8 +9,9 @@ import pandas as pd
 from pathlib import Path
 import torch
 import torch.nn as nn
-
-# Set working directory (consider avoiding global directory changes)
+import random
+#%%
+# Set working directory
 BASE_DIR = Path(r"F:\msjahang\HDL")
 #%%
 # File paths
@@ -203,7 +204,6 @@ columns.remove('basin_id')
 columns_era=df_train_era_norm.columns.to_list()
 columns_era.remove('basin_id')
 
-import random
 # Assign random seed for reproducibility. 213 is aligned with the sample pre-trained
 # weights uploaded
 seed=213
@@ -472,6 +472,8 @@ def preprocess_test_data(df_test_tr, df_test_tr_era, basin_id, columns, columns_
     temp_xx_era = df_test_tr_era[df_test_tr_era['basin_id'] == basin_id].loc[:, columns_era].to_numpy()
     temp_yy = df_test_tr[df_test_tr['basin_id'] == basin_id]['q'].to_numpy().reshape((-1, 1))
 
+    # This approach is only suitable for catchment-wise testing. For larger datasets,
+    # generators should be considered
     xx_, yy_ = split_sequence_multi_train(temp_xx, temp_yy, 365, 7, mode='seq')
     xx_era, _ = split_sequence_multi_s(temp_xx_era, temp_yy, 365, 7, mode='seq')
 
